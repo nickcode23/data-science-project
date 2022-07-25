@@ -1,0 +1,425 @@
+---
+title: "Final Paper"
+author: "STOR 320.02 Group 4"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(modelr)
+library(dplyr)
+library(broom)
+library(purrr)
+library(stats)
+#Put Necessary Libraries Here
+player_stats = read_csv("basketball_99_20.csv") %>%
+  rename("TPA" = "3PA", "TPM" = "3PM")
+```
+
+# INTRODUCTION
+
+Can we predict a player’s change in performance as they move from one league to another? 
+
+Can we predict a player’s performance based on their physical stats and determine their career peak performance?
+
+
+
+# DATA
+```{r}
+#filter out, add calc var
+basketball_stats_1 <- player_stats %>%
+  filter(
+    GP>=5,
+    MIN>= 60,
+    FTA>0,
+    TPA>0,
+    FGA>0,
+    FTM>0,
+    TPM>0,
+    FGM>0
+  )%>%
+  mutate(
+    points_efficiency = PTS/MIN,
+    shot_efficiency = (FTM + FGM + TPM)/(FTA + FGA + TPA),
+    overall_performance = points_efficiency*shot_efficiency
+  )%>%
+  separate(Season, into = c("Season_Beginning", "Season_End"))
+
+
+#compete matrix
+new_matrix = matrix(NA, 11, 2)
+new_matrix[1,1] = 'NBA'
+new_matrix[1,2] = 1
+new_matrix[2,1] = 'Euroleague'
+new_matrix[2,2] = .95
+new_matrix[3,1] = 'Spanish-ACB'
+new_matrix[3,2] = .9
+new_matrix[4,1] = 'Turkish-BSL'
+new_matrix[4,2] = .85
+new_matrix[5,1] = 'German-BBL'
+new_matrix[5,2] = .8
+new_matrix[6,1] = 'Italian-Lega-Basket-Serie-A'
+new_matrix[6,2] = .75
+new_matrix[7,1] = 'French-Jeep-Elite'
+new_matrix[7,2] = .7
+new_matrix[8,1] = 'Greek-HEBA-A1'
+new_matrix[8,2] = .65
+new_matrix[9,1] = 'Australian-NBL'
+new_matrix[9,2] = .6
+new_matrix[10,1] = 'Lithuanian-LKL'
+new_matrix[10,2] = .55
+new_matrix[11,1] = 'Chinese-CBA'
+new_matrix[11,2] = .5
+colnames(new_matrix) = c("League", "Compete_Factor")
+
+compete_factor = as.tibble(new_matrix)
+
+#now the matrix with compete factor will be merged with the player_stats dataset
+player_stats_compete = left_join(basketball_stats_1, compete_factor, by="League") %>%
+  mutate(Compete_Factor = as.numeric(Compete_Factor)) %>%
+  mutate(Performance = overall_performance * Compete_Factor) %>%
+  mutate(Age = 2020 - birth_year) %>%
+  rename("Season"="Season_End") %>%
+  select(-Season_Beginning)
+
+
+
+#sorted, grouped, filtered
+sorted_basketball_players<-player_stats_compete%>%
+filter(League == "NBA" | League == "Euroleague" | League == "Spanish-ACB" | League == "Chinese-CBA")%>%
+filter(Stage != "Playoffs")%>%
+select(`League`,`Player`,`Season`,`Age`,`Performance`)
+
+
+#for loop
+sort = sorted_basketball_players[order(sorted_basketball_players$Player, desc(sorted_basketball_players$Season), sorted_basketball_players$League),] %>%
+  mutate(Performance_Change = (Performance - lead(Performance))) %>%
+  mutate(Season = as.numeric(Season))
+
+sort_for = sort %>%
+  for(I in 1:9928) {
+   if( League[I+1] != League[I] & Player[I+1] == Player[I]) {
+	mutate(Performance_Change[I] == Performance[I+1] - Performance[I])
+} 
+  }
+
+#removed
+mutate(Performance_Change = (Performance - lead(Performance)))
+
+
+ggplot(data=sort, aes(Season, Performance_Change)) + geom_point() +geom_line(aes(x=Season, y=Performance_Change, group=Player))+ theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+sort2 = sort %>%
+for(I in 1:9928) {
+  
+  Performance_Change[I] = 1
+}
+
+
+group_by(Player,League)%>%
+
+```
+
+```{r}
+#question: predict performance based on physical stats (height, weight, age)
+
+#graph of av raw age vs average performance: 
+basketball_stats_1 <- player_stats %>%
+  filter(
+    GP>=5,
+    MIN>= 60,
+    FTA>0,
+    TPA>0,
+    FGA>0,
+    FTM>0,
+    TPM>0,
+    FGM>0
+  )%>%
+  mutate(
+    points_efficiency = PTS/MIN,
+    shot_efficiency = (FTM + FGM + TPM)/(FTA + FGA + TPA),
+    overall_performance = points_efficiency*shot_efficiency
+  )%>%
+  separate(Season, into = c("Season_Beginning", "Season_End"))
+
+#now the performance metric can be analyzed in relation to player age
+basketball2<- basketball_stats_1%>%
+  mutate(
+    Age = (as.numeric(Season_End) - birth_year)
+  )%>%
+  filter(overall_performance < 1)
+
+ggplot(data= basketball2, mapping = aes(x=Age, y=overall_performance))+theme_minimal()+
+  geom_smooth()+
+  ggtitle("Overall Performance of All Players vs Age")+
+  labs(y="Overall Performance")
+
+#create new variables based on above average/below average height and weight, narrow down the dataset
+basketball_categories<- basketball2%>%
+  mutate(avg_height = mean(height_cm, na.rm = T))%>%
+  mutate (height_category = ifelse((height_cm >= avg_height), "Tall", "Short"))%>%
+  mutate(avg_weight = mean(weight_kg, na.rm = T))%>%
+  mutate(AgeSq = Age^2) %>%
+  mutate (weight_category = ifelse((weight_kg >= avg_weight), "Heavy", "Light"))%>%
+  select(`weight_category`,`height_category`,`Player`,`overall_performance`,`Age`, `AgeSq`)%>%
+  arrange(height_category,weight_category)
+
+basketball_categories_tall_heavy<-na.omit(basketball_categories)%>%
+  filter(weight_category=="Heavy"&height_category =="Tall")
+basketball_categories_tall_light<-na.omit(basketball_categories)%>%
+  filter(weight_category=="Light"&height_category =="Tall")
+basketball_categories_short_heavy<-na.omit(basketball_categories)%>%
+  filter(weight_category=="Heavy"&height_category =="Short")
+basketball_categories_short_light<-na.omit(basketball_categories)%>%
+  filter(weight_category=="Light"&height_category =="Short")
+
+#making the polynomial model
+
+```
+
+
+```{r}
+#crosskv
+set.seed(216) #DO NOT CHANGE
+
+STATS.CROSSKV1 = na.omit(basketball_categories_short_heavy) %>% crossv_kfold(10)
+head(STATS.CROSSKV1)
+
+STATS.CROSSKV2 = na.omit(basketball_categories_short_light) %>% crossv_kfold(10)
+STATS.CROSSKV3 = na.omit(basketball_categories_tall_heavy) %>% crossv_kfold(10)
+STATS.CROSSKV4 = na.omit(basketball_categories_tall_light) %>% crossv_kfold(10)
+
+
+#rmse
+
+RMSE.func = function(actual, predict) {
+  mse=mean((actual-predict)^2,na.rm=T)
+  rmse=sqrt(mse)
+  return(rmse)
+}
+
+
+
+#model
+train.model.func=function(data,I,J){
+  mod=lm(overall_performance~poly(Age, I)+poly(AgeSq, J),data=data)
+  return(mod)
+}
+
+#model testing - i 1-7
+mod1final=train.model.func(basketball_categories_short_heavy, 1, 3)
+cat1final = basketball_categories_short_heavy %>%
+  mutate(Predict=predict(mod1final)) %>%
+  add_residuals(mod1final)
+
+mod2final=train.model.func(basketball_categories_short_light, 7, 6)
+cat2final = basketball_categories_short_light %>%
+  mutate(Predict=predict(mod2final)) %>%
+  add_residuals(mod2final)
+  
+mod3final=train.model.func(basketball_categories_tall_heavy, 5, 1)
+cat3final = basketball_categories_tall_heavy %>%
+  mutate(Predict=predict(mod3final)) %>%
+  add_residuals(mod3final)
+
+mod4final=train.model.func(basketball_categories_tall_light, 7, 4)
+cat4final = basketball_categories_tall_light %>%
+  mutate(Predict=predict(mod4final)) %>%
+  add_residuals(mod4final)
+  
+#ggplot w/ i=4 residuals
+
+ggplot(cat1final) +
+  geom_point(aes(x=Age, y=Predict), alpha=0.05, stroke=0) + geom_abline(slope = 1, intercept=0,color="red") +xlab("Age") + ylab("Predicted Performance")
+ggplot(cat2final) +
+  geom_point(aes(x=Age, y=Predict), alpha=0.05, stroke=0) + geom_abline(slope = 1, intercept=0,color="red") +xlab("Age") + ylab("Predicted Performance")
+ggplot(cat3final) +
+  geom_point(aes(x=Age, y=Predict), alpha=0.05, stroke=0) + geom_abline(slope = 1, intercept=0,color="red") +xlab("Age") + ylab("Predicted Performance")
+ggplot(cat4final) +
+  geom_point(aes(x=Age, y=Predict), alpha=0.05, stroke=0) + geom_abline(slope = 1, intercept=0,color="red") +xlab("Age") + ylab("Predicted Performance")
+
+#age vs performance ggplot ##BEST MODEL##
+ggplot(cat1final) +
+  geom_point(aes(x=Age, y=overall_performance), stroke=0) + geom_line(aes(x=Age, y=Predict)) +xlab("Age") + ylab("Overall Performance")
+ggplot(cat2final) +
+  geom_point(aes(x=Age, y=overall_performance), stroke=0) + geom_line(aes(x=Age, y=Predict)) +xlab("Age") + ylab("Overall Performance")
+ggplot(cat3final) +
+  geom_point(aes(x=Age, y=overall_performance), stroke=0) + geom_line(aes(x=Age, y=Predict)) +xlab("Age") + ylab("Overall Performance")
+ggplot(cat4final) +
+  geom_point(aes(x=Age, y=overall_performance), stroke=0) + geom_line(aes(x=Age, y=Predict)) +xlab("Age") + ylab("Overall Performance")
+
+#actual vs fitted
+ggplot(modfinal_i4) +
+  geom_point(aes(x=overall_performance, y=Predict), alpha=0.05, stroke=0) + geom_abline(slope = 1, intercept=0,color="red") +xlab("Actual Performance") + ylab("Fitted Performance")
+
+#residuals graph
+ggplot(modfinal_i4) +
+  geom_point(aes(x=Age, y=resid), alpha=0.05, stroke=0) + geom_hline(yintercept=0,color="red") +xlab("Age") + ylab("Residual")
+
+
+sort4 = sort %>%
+  add_predictions(mod, var="Predicted Change") %>%
+  add_residuals(mod, var="Residual")
+
+ggplot(sort4) +
+  geom_point(aes(x=Performance_Change, y="Predicted Change"), alpha=0.05, stroke=0) + xlab("Actual Performance Change") + ylab("Fitted Performance Change")
+
+ggplot(sort4) +
+  geom_point(aes(x=Season, y=Residual), alpha=0.05, stroke=0) + geom_hline(yintercept=0,color="red") +xlab("Season") + ylab("Residual")
+
+
+#out-rmse
+OUT.RMSE=matrix(NA,7,7) #DO NOT CHANGE
+
+
+#for loop 
+  test2=STATS.CROSSKV2 %>% 
+    mutate(tr.model=map(train,train.model.func,1))
+    test2.predict = test2 %>% 
+      mutate(predict=map2(test,tr.model,~augment(.y,newdata=.x))) %>%
+      select(predict) %>%
+      unnest(cols = c(predict))
+    rmse = RMSE.func(actual=test2.predict$overall_performance,predict=test2.predict$.fitted)
+    OUT.RMSE[1] = rmse
+    
+    test1=STATS.CROSSKV2 %>% 
+    mutate(tr.model=map(train,train.model.func,2))
+    test2.predict = test2 %>% 
+      mutate(predict=map2(test,tr.model,~augment(.y,newdata=.x))) %>%
+      select(predict) %>%
+      unnest(cols = c(predict))
+    rmse = RMSE.func(actual=test2.predict$overall_performance,predict=test2.predict$.fitted)
+    OUT.RMSE[2] = rmse
+    
+    test1=STATS.CROSSKV2 %>% 
+    mutate(tr.model=map(train,train.model.func,3))
+    test1.predict = test2 %>% 
+      mutate(predict=map2(test,tr.model,~augment(.y,newdata=.x))) %>%
+      select(predict) %>%
+      unnest(cols = c(predict))
+    rmse = RMSE.func(actual=test2.predict$overall_performance,predict=test2.predict$.fitted)
+    OUT.RMSE[3] = rmse
+    
+    test1=STATS.CROSSKV2 %>% 
+    mutate(tr.model=map(train,train.model.func,4))
+    test2.predict = test2 %>% 
+      mutate(predict=map2(test,tr.model,~augment(.y,newdata=.x))) %>%
+      select(predict) %>%
+      unnest(cols = c(predict))
+    rmse = RMSE.func(actual=test1.predict$overall_performance,predict=test1.predict$.fitted)
+    OUT.RMSE[4] = rmse
+    
+    test1=STATS.CROSSKV1 %>% 
+    mutate(tr.model=map(train,train.model.func,5))
+    test1.predict = test1 %>% 
+      mutate(predict=map2(test,tr.model,~augment(.y,newdata=.x))) %>%
+      select(predict) %>%
+      unnest(cols = c(predict))
+    rmse = RMSE.func(actual=test1.predict$overall_performance,predict=test1.predict$.fitted)
+    OUT.RMSE[5] = rmse
+    
+    test1=STATS.CROSSKV1 %>% 
+    mutate(tr.model=map(train,train.model.func,6))
+    test1.predict = test1 %>% 
+      mutate(predict=map2(test,tr.model,~augment(.y,newdata=.x))) %>%
+      select(predict) %>%
+      unnest(cols = c(predict))
+    rmse = RMSE.func(actual=test1.predict$overall_performance,predict=test1.predict$.fitted)
+    OUT.RMSE[6] = rmse
+    
+    test1=STATS.CROSSKV1 %>% 
+    mutate(tr.model=map(train,train.model.func,7))
+    test1.predict = test1 %>% 
+      mutate(predict=map2(test,tr.model,~augment(.y,newdata=.x))) %>%
+      select(predict) %>%
+      unnest(cols = c(predict))
+    rmse = RMSE.func(actual=test1.predict$overall_performance,predict=test1.predict$.fitted)
+    OUT.RMSE[7] = rmse
+
+    
+#for loop after using age squared
+OUT.RMSE=matrix(NA,7,7)
+for(I in 1:7) {
+  for(J in 1:7) {
+    DATA4= STATS.CROSSKV4%>% 
+       mutate(tr.model=map(train,train.model.func,I=I,J=J))
+    DATA4.PREDICT = DATA4 %>% 
+          mutate(predict=map2(test,tr.model,~augment(.y,newdata=.x))) %>%
+          select(predict) %>%
+          unnest(cols = c(predict))
+    rmse = RMSE.func(actual=DATA4.PREDICT$overall_performance,predict=DATA4.PREDICT$.fitted)
+    OUT.RMSE[I,J] = rmse
+  }
+}    
+
+
+view(STATS.CROSSKV1)
+#tidy
+OUT.RMSE2=as.tibble(OUT.RMSE) %>% 
+  mutate(I=1:7) %>% 
+  rename(`1`=V1,`2`=V2,`3`=V3,`4`=V4,`5`=V5,`6`=V6,`7`=V7) %>%
+  select(I,everything()) %>%
+  gather(`1`:`7`,key="J",value="RMSE",convert=T) %>%
+  mutate(I=as.factor(I),J=as.factor(J))
+head(OUT.RMSE2)
+
+
+#top 5 models
+BEST5.RMSE = OUT.RMSE2[order(OUT.RMSE2$RMSE),] %>% slice(1:5)
+
+
+#add best 5 to dataset
+BEST5_sort=sort %>%
+            mutate(First=predict(lm(Performance_Change~poly(Performance,6)+poly(Age,4))),
+                   Second=predict(lm(Performance_Change~poly(Performance,6)+poly(Age,3))),
+                   Third=predict(lm(Performance_Change~poly(Performance,6)+poly(Age,2))),
+                   Fourth=predict(lm(Performance_Change~poly(Performance,6)+poly(Age,6))),
+                   Fifth=predict(lm(Performance_Change~poly(Performance,6)+poly(Age,1))))
+
+
+
+```
+```{r}
+#compare avgRMSE 
+OUT.RMSE2 %>% 
+  group_by(I) %>% 
+  summarize(avgRMSE=mean(RMSE))%>%
+  ungroup() %>%
+    ggplot() +
+    geom_point(aes(x=I,y=avgRMSE))+
+    geom_line(aes(x=I,y=avgRMSE,group=1)) +
+    theme_minimal()
+
+OUT.RMSE2 %>% 
+  group_by(J) %>% 
+  summarize(avgRMSE=mean(RMSE))%>%
+  ungroup() %>%
+    ggplot() +
+    geom_point(aes(x=J,y=avgRMSE))+
+    geom_line(aes(x=J,y=avgRMSE,group=1)) +
+    theme_minimal()
+
+
+BEST.func=function(data){
+  choice = vector(length=2)
+  choice[1] = data$I[which.min(data$RMSE)]
+  choice[2] = data$J[which.min(data$RMSE)]
+  return(choice)
+}
+
+BEST.CHOICE=BEST.func(data=OUT.RMSE2)
+
+
+#best model is 6,4
+best.sort5 = sort %>%
+  mutate(Predict=predict(lm(Performance_Change~poly(Performance,6)+poly(as.numeric(Season),4),data=sort)))
+
+ggplot(best5.sort5) +
+  geom_point(aes(x=actual, y=Predict), alpha=0.05, stroke=0) + geom_abline(slope = 1, intercept=0,color="red") +xlab("Actual Max Water Temperature") + ylab("Fitted Max Water Temperature")
+
+```
+
+I
+
