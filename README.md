@@ -1,1 +1,2 @@
 # data-science-project
+In this project, we aim to predict a player’s future performance in their proposed league of destination, given their prior performance in another league, scouts and managers will be better able to assess their investments. Furthermore, managers could analyze their existing teams in order to better understand their team makeup based on their predicted age of peak performance. In the profitable industry surrounding basketball players, information is certainly equivalent to money and accurate performance analysis plays a vital role.
